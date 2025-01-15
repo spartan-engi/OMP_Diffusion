@@ -88,8 +88,10 @@ int compare_matrices(double* M0, double* M1)
 	return 1;
 }
 
-int main()
+int main(int argc, char* argv[])
 {
+	int mode = 0;
+	if(argc > 1) mode = atoi(argv[1]);
 	// double M0[SIZE * SIZE] = {0};
 	// double M1[SIZE * SIZE] = {0};
 	double* M0 = malloc(sizeof(double)*SIZE*SIZE);
@@ -115,7 +117,7 @@ int main()
 		struct timespec start, end;
 		clock_gettime(CLOCK_MONOTONIC, &start);
 
-		update(M0, cache, 12);
+		update(M0, cache, mode);
 
 		clock_gettime(CLOCK_MONOTONIC, &end);
 
