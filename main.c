@@ -79,7 +79,7 @@ int compare_matrices(double* M0, double* M1)
 	{
 		for(int j = 0; j < SIZE; j++)
 		{
-			if(M1[cellID(i,j)] != M1[cellID(i,j)])
+			if(M0[cellID(i,j)] != M1[cellID(i,j)])
 			{
 				return 0;
 			}
