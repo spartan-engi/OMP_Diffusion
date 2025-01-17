@@ -9,8 +9,6 @@
 #define ITERATIONS 100
 #define DELTA_T 0.1
 
-#define THREADS 256
-
 #define UI 0
 
 
@@ -53,8 +51,9 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode)
 {
 	#ifdef GPU
 	//cuda mode
-	if(mode == -1)
+	if(mode < 0)
 	{
+		mode = -mode;
 		// setup buffers to send matrix
 		double* a;
 		double* b;
@@ -68,10 +67,10 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode)
 		// run simulation
 		for(int t = 0; t < ITERATIONS/2; t++)
 		{
-			int blk_count = (SIZE*SIZE + (THREADS-1))/THREADS;
-			kernel_update<<<blk_count,THREADS>>>(a, b);
+			int blk_count = (SIZE*SIZE + (mode-1))/mode;
+			kernel_update<<<blk_count,mode>>>(a, b);
 			cudaDeviceSynchronize();
-			kernel_update<<<blk_count,THREADS>>>(b, a);
+			kernel_update<<<blk_count,mode>>>(b, a);
 			cudaDeviceSynchronize();
 		}
 
