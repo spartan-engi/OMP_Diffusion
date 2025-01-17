@@ -114,10 +114,10 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode)
 		#endif
 
 		//significant speedup from switching values around
-		double* t;
-		t  = t0;
+		double* swap_pointer;
+		swap_pointer  = t0;
 		t0 = t1;
-		t1 = t ;
+		t1 = swap_pointer ;
 	}
 
 	#if(ITERATIONS % 2)
@@ -155,10 +155,10 @@ int main(int argc, char* argv[])
 	if(argc > 1) mode = atoi(argv[1]);
 	// double M0[SIZE * SIZE] = {0};
 	// double M1[SIZE * SIZE] = {0};
-	double* M0 = malloc(sizeof(double)*SIZE*SIZE);
-	double* cache = malloc(sizeof(double)*SIZE*SIZE);
+	double* M0    = (double*)malloc(sizeof(double)*SIZE*SIZE);
+	double* cache = (double*)malloc(sizeof(double)*SIZE*SIZE);
 	// serial check matrix
-	double* SCM = malloc(sizeof(double)*SIZE*SIZE);
+	double* SCM   = (double*)malloc(sizeof(double)*SIZE*SIZE);
 
 
 	// serial check, disable threads and run normally
@@ -179,12 +179,16 @@ int main(int argc, char* argv[])
 
 		#ifndef GPU
 		clock_gettime(CLOCK_MONOTONIC, &start);
+		#else
+		timespec_get(&start, TIME_UTC);
 		#endif
 
 		update(M0, cache, mode);
 
 		#ifndef GPU
 		clock_gettime(CLOCK_MONOTONIC, &end);
+		#else
+		timespec_get(&end, TIME_UTC);
 		#endif
 
 
