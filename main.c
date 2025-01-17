@@ -183,6 +183,7 @@ int main(int argc, char* argv[])
 		#ifndef GPU
 		clock_gettime(CLOCK_MONOTONIC, &start);
 		#else
+		cudaDeviceSynchronize();
 		timespec_get(&start, TIME_UTC);
 		#endif
 
