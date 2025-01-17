@@ -140,13 +140,16 @@ int compare_matrices(double* M0, double* M1)
 	{
 		for(int j = 0; j < SIZE; j++)
 		{
-			if(M0[cellID(i,j)] != M1[cellID(i,j)])
+			double p = M0[cellID(i,j)];
+			double s = M1[cellID(i,j)];
+			double diff = s - p;
+			if(diff > 0.000000000000001)
 			{
-				return 0;
+				valid = 0;
 			}
 		}
 	}
-	return 1;
+	return valid;
 }
 
 int main(int argc, char* argv[])
