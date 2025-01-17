@@ -90,23 +90,20 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode)
 		double difusion_sum = 0.0;
 
 		#pragma omp parallel for reduction(+:difusion_sum) num_threads(mode)
-		for(int i = 1; i < SIZE-1; i++)
+		for(int index = 0; index < SIZE*SIZE; index++)
 		{
-			for(int j = 1; j < SIZE-1; j++)
-			{
-				// change
-				double diff = 0.0;
-				diff -= 4.0*(t0[cellID(i,j)]);
-				diff += (t0[cellID(i-1,j  )]);
-				diff += (t0[cellID(i  ,j-1)]);
-				diff += (t0[cellID(i+1,j  )]);
-				diff += (t0[cellID(i  ,j+1)]);
-				diff = diff * DELTA_T*DIFF*(1/(DELTA_X*DELTA_X));
+			// change
+			double diff = 0.0;
+			diff -= 4.0*(t0[index]);
+			if(0 <= (index - SIZE)            ) {diff += (t0[index - SIZE]);}
+			if(0 <= (index -    1)            ) {diff += (t0[index -    1]);}
+			if(     (index + SIZE) < SIZE*SIZE) {diff += (t0[index + SIZE]);}
+			if(     (index +    1) < SIZE*SIZE) {diff += (t0[index +    1]);}
+			diff = diff * DELTA_T*DIFF*(1/(DELTA_X*DELTA_X));
 
-				difusion_sum += ((diff > 0) ? diff : -diff);
+			difusion_sum += ((diff > 0) ? diff : -diff);
 
-				t1[cellID(i, j)] = diff + t0[cellID(i, j)];
-			}
+			t1[index] = diff + t0[index];
 		}
 
 		#if UI
