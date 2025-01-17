@@ -9,6 +9,8 @@
 #define ITERATIONS 100
 #define DELTA_T 0.1
 
+#define THREADS 256
+
 #define UI 0
 
 
@@ -17,9 +19,68 @@ int cellID(int x, int y)
 {
 	return SIZE*x + y;
 }
+// /*
+#ifdef GPU
+// update updates matrix with all iterations. uses GPU
+__global__ void kernel_update(double* in, double* out)
+{
+	int index = threadIdx.x + blockIdx.x * blockDim.x;
+
+	if(index >= SIZE*SIZE) return;
+
+	// change
+	double diff = 0.0;
+	diff -= 4.0*(in[index]);
+	if(0 <= (index - SIZE)            ) {diff += in[index - SIZE];}
+	if(0 <= (index -    1)            ) {diff += in[index -    1];}
+	if(     (index + SIZE) < SIZE*SIZE) {diff += in[index + SIZE];}
+	if(     (index +    1) < SIZE*SIZE) {diff += in[index +    1];}
+	diff = diff * DELTA_T*DIFF*(1/(DELTA_X*DELTA_X));
+
+	out[index] = diff + in[index];
+
+	return;
+}
+#endif
+// */
 // update updates matrix with all iterations. uses second matrix as working memory
 void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode)
 {
+	#ifdef GPU
+	//cuda mode
+	if(mode == -1)
+	{
+		// setup buffers to send matrix
+		double* a;
+		double* b;
+		cudaMalloc((void**)&a, sizeof(double)*SIZE*SIZE);
+		cudaMalloc((void**)&b, sizeof(double)*SIZE*SIZE);
+
+		// push data to GPU
+		cudaMemcpy(a, M, sizeof(double)*SIZE*SIZE, cudaMemcpyHostToDevice);
+		// cudaMemcpy(b) //this is a cache, no setup
+
+		// run simulation
+		for(int t = 0; t < ITERATIONS/2; t++)
+		{
+			int blk_count = (SIZE*SIZE + (THREADS-1))/THREADS;
+			kernel_update<<<blk_count,THREADS>>>(a, b);
+			cudaDeviceSynchronize();
+			kernel_update<<<blk_count,THREADS>>>(b, a);
+			cudaDeviceSynchronize();
+		}
+
+		// pull data from GPU
+		cudaMemcpy(M, a, sizeof(double)*SIZE*SIZE, cudaMemcpyDeviceToHost);
+
+		cudaFree(a); cudaFree(b);
+
+		// done.
+		return;
+	}
+	#endif
+
+
 	// swap pointers instead of matrcies
 	double* t0 = M;
 	double* t1 = cache;
@@ -115,11 +176,16 @@ int main(int argc, char* argv[])
 
 
 		struct timespec start, end;
+
+		#ifndef GPU
 		clock_gettime(CLOCK_MONOTONIC, &start);
+		#endif
 
 		update(M0, cache, mode);
 
+		#ifndef GPU
 		clock_gettime(CLOCK_MONOTONIC, &end);
+		#endif
 
 
 		fprintf(file, "\nM[%d][%d]: %f", SIZE/2, SIZE/2, M0[cellID(SIZE/2, SIZE/2)]);
