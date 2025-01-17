@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define SIZE 300
+#define SIZE 1024
 #define DELTA_X 1.0
 #define DIFF 0.1
 #define ITERATIONS 100
