@@ -24,19 +24,24 @@ int cellID(int x, int y)
 // update updates matrix with all iterations. uses GPU
 __global__ void kernel_update(double* in, double* out)
 {
+	//index that the thread will act upon
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
-
+	// if and only if it is inside the matrix
 	if(index >= SIZE*SIZE) return;
 
-	// change
+	// change in concentration
 	double diff = 0.0;
-	diff -= 4.0*(in[index]);
+	// total concentration on the cells up/left/down/right of the middle cell
 	if(0 <= (index - SIZE)            ) {diff += in[index - SIZE];}
 	if(0 <= (index -    1)            ) {diff += in[index -    1];}
 	if(     (index + SIZE) < SIZE*SIZE) {diff += in[index + SIZE];}
 	if(     (index +    1) < SIZE*SIZE) {diff += in[index +    1];}
+	// minus the concentration of the middle cell
+	diff -= 4.0*(in[index]);
+	// multiplied by the diffusion coeficient
 	diff = diff * DELTA_T*DIFF*(1/(DELTA_X*DELTA_X));
 
+	//becomes the change in concentration of the middle cell
 	out[index] = diff + in[index];
 
 	return;
@@ -89,20 +94,26 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode)
 	{
 		double difusion_sum = 0.0;
 
+		//for every cell
 		#pragma omp parallel for reduction(+:difusion_sum) num_threads(mode)
 		for(int index = 0; index < SIZE*SIZE; index++)
 		{
-			// change
+			// change in concentration
 			double diff = 0.0;
-			diff -= 4.0*(t0[index]);
+
+			// total concentration on the cells up/left/down/right of the middle cell
 			if(0 <= (index - SIZE)            ) {diff += (t0[index - SIZE]);}
 			if(0 <= (index -    1)            ) {diff += (t0[index -    1]);}
 			if(     (index + SIZE) < SIZE*SIZE) {diff += (t0[index + SIZE]);}
 			if(     (index +    1) < SIZE*SIZE) {diff += (t0[index +    1]);}
+			// minus the concentration of the middle cell
+			diff -= 4.0*(t0[index]);
+			// multiplied by the diffusion coeficient
 			diff = diff * DELTA_T*DIFF*(1/(DELTA_X*DELTA_X));
 
 			difusion_sum += ((diff > 0) ? diff : -diff);
 
+			//becomes the change in concentration of the middle cell
 			t1[index] = diff + t0[index];
 		}
 
