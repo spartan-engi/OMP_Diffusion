@@ -124,12 +124,13 @@ int main(int argc, char* argv[])
 
 		fprintf(file, "\nM[%d][%d]: %f", SIZE/2, SIZE/2, M0[cellID(SIZE/2, SIZE/2)]);
 		long long time = 1000000000*(end.tv_sec-start.tv_sec) + (end.tv_nsec-start.tv_nsec);
-		fprintf(file, "\nelapsed seconds: %lld.%03lld %03lld %03lld", 
-		(time/1000000000)%1000, 
-		(time/1000000)%1000, 
-		(time/1000)%1000, 
-		(time)%1000
-		);
+		fprintf(file, "\telapsed seconds: %lld", time); 
+		// fprintf(file, "\telapsed seconds: %lld.%03lld %03lld %03lld", 
+		// (time/1000000000)%1000, 
+		// (time/1000000)%1000, 
+		// (time/1000)%1000, 
+		// (time)%1000
+		// );
 	}
 	fclose(file);
 
