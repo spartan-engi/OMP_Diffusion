@@ -7,6 +7,3 @@ build:
 cuda:
 	nvcc main.c -o main.exe -g -D GPU -x cu -Xcompiler /openmp --compiler-bindir $(compilerDir)
 # /showIncludes
-
-run:
-	./main.exe
