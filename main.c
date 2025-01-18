@@ -161,8 +161,6 @@ int compare_matrices(double* M0, double* M1)
 
 int main(int argc, char* argv[])
 {
-	int mode = 0;
-	if(argc > 1) mode = atoi(argv[1]);
 	// double M0[SIZE * SIZE] = {0};
 	// double M1[SIZE * SIZE] = {0};
 	double* M0    = (double*)malloc(sizeof(double)*SIZE*SIZE);
@@ -179,6 +177,14 @@ int main(int argc, char* argv[])
 
 
 	FILE* file = fopen("result", "w");
+	// for each number, run test
+	for(int modes = 1; modes < argc; modes++)
+	{
+	int mode = atoi(argv[modes]);
+	printf("cooldown... [press enter to continue]");
+	getc(stdin);
+	printf("start:\n");
+	fprintf(file, "\nmode:%d", mode);
 	for(int reps = 0; reps < 10; reps++)
 	{
 		for(int i = 0; i < SIZE*SIZE; i++)	M0[i] = 0.0;
@@ -213,11 +219,14 @@ int main(int argc, char* argv[])
 		// (time)%1000
 		// );
 	}
+
+	printf("%d done\n", mode);
+	// verify
+	if(compare_matrices(M0, SCM)) printf("serial-parralel Match.\n");
+	else						  printf("serial-parralel ERROR mismatch!\n");
+	}
 	fclose(file);
 
-	// verify
-	if(compare_matrices(M0, SCM)) printf("serial-paralel match.\n");
-	else						  printf("serial-paralel mismatch!\n");
 
 	return 0;
 }
