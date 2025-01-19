@@ -47,7 +47,7 @@ __global__ void kernel_update(double* in, double* out)
 #endif
 // */
 // update updates matrix with all iterations. uses second matrix as working memory
-void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode)
+void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode, int iterations)
 {
 	#ifdef GPU
 	//cuda mode
@@ -65,7 +65,7 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode)
 		// cudaMemcpy(b) //this is a cache, no setup
 
 		// run simulation
-		for(int t = 0; t < ITERATIONS/2; t++)
+		for(int t = 0; t < iterations/2; t++)
 		{
 			int blk_count = (SIZE*SIZE + (mode-1))/mode;
 			kernel_update<<<blk_count,mode>>>(a, b);
@@ -89,7 +89,8 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode)
 	double* t0 = M;
 	double* t1 = cache;
 
-	for(int t = 0; t < ITERATIONS; t++)
+	if(iterations % 2) iterations--;	//rounded down to even
+	for(int t = 0; t < iterations; t++)
 	{
 		double difusion_sum = 0.0;
 
@@ -127,16 +128,6 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode)
 		t1 = swap_pointer ;
 	}
 
-	#if(ITERATIONS % 2)
-	// extra swap to guarantee the right matrix is result
-	for(int i = 1; i < SIZE-1; i++)
-	{
-		for(int j = 1; j < SIZE-1; j++)
-		{
-			M[cellID(i, j)] = cache[cellID(i, j)];
-		}
-	}
-	#endif
 	return;
 }
 // returns 1 if matricies are identical
@@ -168,11 +159,14 @@ int main(int argc, char* argv[])
 	// serial check matrix
 	double* SCM   = (double*)malloc(sizeof(double)*SIZE*SIZE);
 
+	// standard amount of iterations
+	// gets rounded down to even
+	int iterations = ITERATIONS;
 
 	// serial check, disable threads and run normally
 	for(int i = 0; i < SIZE*SIZE; i++)	SCM[i] = 0.0;
 	SCM[cellID(SIZE/2, SIZE/2)] = 1.0;
-	update(SCM, cache, 1);
+	update(SCM, cache, 1, iterations);
 	printf("check matrix created\n");
 
 
@@ -200,7 +194,7 @@ int main(int argc, char* argv[])
 		timespec_get(&start, TIME_UTC);
 		#endif
 
-		update(M0, cache, mode);
+		update(M0, cache, mode, iterations);
 
 		#ifndef GPU
 		clock_gettime(CLOCK_MONOTONIC, &end);
