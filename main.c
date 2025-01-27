@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <math.h>
 
 #define SIZE 1024
 #define DELTA_X 1.0
@@ -11,6 +12,12 @@
 
 #define UI 0
 
+const int test_numbers[2][16] = 
+{
+	{1, 2, 3, 4, 5, 6, 7,  8,  9, 10,  11,  12,  13,  14,   15,   16}, // OMP
+	{1, 2, 4, 8,16,32,64,128,256,512,1024,2048,4096,8192,16384,32768}, // CUDA
+};
+
 
 // unrolled matrix into one vector
 int cellID(int x, int y)
@@ -19,7 +26,7 @@ int cellID(int x, int y)
 }
 // /*
 #ifdef GPU
-// update updates matrix with all iterations. uses GPU
+// update updates matrix one iteration. uses GPU
 __global__ void kernel_update(double* in, double* out)
 {
 	//index that the thread will act upon
@@ -47,13 +54,12 @@ __global__ void kernel_update(double* in, double* out)
 #endif
 // */
 // update updates matrix with all iterations. uses second matrix as working memory
-void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode, int iterations)
+void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int threads, int iterations, int mode)
 {
 	#ifdef GPU
 	//cuda mode
-	if(mode < 0)
+	if(mode == 1)
 	{
-		mode = -mode;
 		// setup buffers to send matrix
 		double* a;
 		double* b;
@@ -67,10 +73,10 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode, int iteratio
 		// run simulation
 		for(int t = 0; t < iterations/2; t++)
 		{
-			int blk_count = (SIZE*SIZE + (mode-1))/mode;
-			kernel_update<<<blk_count,mode>>>(a, b);
+			int blk_count = (SIZE*SIZE + (threads-1))/threads;
+			kernel_update<<<blk_count,threads>>>(a, b);
 			cudaDeviceSynchronize();
-			kernel_update<<<blk_count,mode>>>(b, a);
+			kernel_update<<<blk_count,threads>>>(b, a);
 			cudaDeviceSynchronize();
 		}
 
@@ -85,6 +91,8 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode, int iteratio
 	#endif
 
 
+	if(mode == 0)
+	{
 	// swap pointers instead of matrcies
 	double* t0 = M;
 	double* t1 = cache;
@@ -95,7 +103,7 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode, int iteratio
 		double difusion_sum = 0.0;
 
 		//for every cell
-		#pragma omp parallel for reduction(+:difusion_sum) num_threads(mode)
+		#pragma omp parallel for reduction(+:difusion_sum) num_threads(threads)
 		for(int index = 0; index < SIZE*SIZE; index++)
 		{
 			// change in concentration
@@ -126,6 +134,7 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int mode, int iteratio
 		swap_pointer  = t0;
 		t0 = t1;
 		t1 = swap_pointer ;
+	}
 	}
 
 	return;
@@ -166,20 +175,27 @@ int main(int argc, char* argv[])
 	// serial check, disable threads and run normally
 	for(int i = 0; i < SIZE*SIZE; i++)	SCM[i] = 0.0;
 	SCM[cellID(SIZE/2, SIZE/2)] = 1.0;
-	update(SCM, cache, 1, iterations);
+	update(SCM, cache, 1, iterations, 0);
 	printf("check matrix created\n");
 
 
 	FILE* file = fopen("result", "w");
-	// for each number, run test
-	for(int modes = 1; modes < argc; modes++)
+	// for each mode, run tests
+	for(int mode = 0; mode < 2; mode++)
 	{
-	int mode = atoi(argv[modes]);
-	printf("cooldown... [press enter to continue]");
-	getc(stdin);
-	printf("start:\n");
-	fprintf(file, "\nmode:%d", mode);
-	for(int reps = 0; reps < 10; reps++)
+	#ifndef GPU
+	if(mode == 1)	break;
+	#endif
+	// for each number of threads, run test
+	for(int n_test = 0; n_test < 16; n_test++)
+	{
+	int threads = test_numbers[mode][n_test];
+	// printf("cooldown... [press enter to continue]");
+	// getc(stdin);
+	// printf("start.\n");
+	fprintf(file, "%d, ", threads);
+	double times[12];
+	for(int reps = 0; reps < 12; reps++)
 	{
 		for(int i = 0; i < SIZE*SIZE; i++)	M0[i] = 0.0;
 		M0[cellID(SIZE/2, SIZE/2)] = 1.0;
@@ -194,7 +210,7 @@ int main(int argc, char* argv[])
 		timespec_get(&start, TIME_UTC);
 		#endif
 
-		update(M0, cache, mode, iterations);
+		update(M0, cache, threads, iterations, mode);
 
 		#ifndef GPU
 		clock_gettime(CLOCK_MONOTONIC, &end);
@@ -202,10 +218,10 @@ int main(int argc, char* argv[])
 		timespec_get(&end, TIME_UTC);
 		#endif
 
-
-		fprintf(file, "\nM[%d][%d]: %f", SIZE/2, SIZE/2, M0[cellID(SIZE/2, SIZE/2)]);
 		long long time = 1000000000*(end.tv_sec-start.tv_sec) + (end.tv_nsec-start.tv_nsec);
-		fprintf(file, "\telapsed seconds: %lld,%09lld", time/1000000000, time%1000000000); 
+		// fprintf(file, "\nM[%d][%d]: %f", SIZE/2, SIZE/2, M0[cellID(SIZE/2, SIZE/2)]);
+		// fprintf(file, "\telapsed seconds: %lld,%09lld", time/1000000000, time%1000000000); 
+		times[reps] = time/1000000000.0;
 		// fprintf(file, "\telapsed seconds: %lld.%03lld %03lld %03lld", 
 		// (time/1000000000)%1000, 
 		// (time/1000000)%1000, 
@@ -213,12 +229,40 @@ int main(int argc, char* argv[])
 		// (time)%1000
 		// );
 	}
+	//get rid of the biggest and smallest values
+	{
+		int biggest = 0, smallest = 0;
+		for(int i = 1; i < 12; i++)
+		{
+			if(times[smallest] > times[i]) smallest = i;
+			if(times[biggest ] < times[i]) biggest  = i;
+		}
+		double swap;
+		swap = times[10]; times[10] = times[biggest ]; times[biggest ] = swap;
+		swap = times[11]; times[11] = times[smallest]; times[smallest] = swap;
+	}
+	//calculate the medium
+	double med = 0;
+	for(int i = 0; i < 10; i++) med += times[i];
+	med = med /10;
+	//and then standard deviation
+	double std = 0;
+	for(int i = 0; i < 10; i++)
+	{
+		double t = (times[i] - med);
+		std += t*t;
+	}
+	std = sqrt(std / 10.0);
 
-	printf("%d done\n", mode);
+	fprintf(file, "%.9lf, %.9lf;", med, std);
+
+	printf("%d done\n", threads);
 	// verify
 	if(compare_matrices(M0, SCM)) printf("serial-parralel Match.\n");
 	else						  printf("serial-parralel ERROR mismatch!\n");
 	}
+	}
+
 	fclose(file);
 
 
