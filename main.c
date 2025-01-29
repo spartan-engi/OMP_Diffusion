@@ -159,6 +159,12 @@ int compare_matrices(double* M0, double* M1)
 	return valid;
 }
 
+void run_mode
+(
+	double* median, double* standard_deviation, 
+	int mode, int threads, int iterations, 
+	double* M0, double* cache
+);
 int main(int argc, char* argv[])
 {
 	// double M0[SIZE * SIZE] = {0};
@@ -181,19 +187,39 @@ int main(int argc, char* argv[])
 
 	FILE* file = fopen("result", "w");
 	// for each mode, run tests
-	for(int mode = 0; mode < 2; mode++)
+	for(int mode = 1; mode < 2; mode++)
 	{
-	#ifndef GPU
-	if(mode == 1)	break;
-	#endif
-	// for each number of threads, run test
-	for(int n_test = 0; n_test < 16; n_test++)
-	{
-	int threads = test_numbers[mode][n_test];
-	// printf("cooldown... [press enter to continue]");
-	// getc(stdin);
-	// printf("start.\n");
-	fprintf(file, "%d, ", threads);
+		#ifndef GPU
+		if(mode == 1)	break;
+		#endif
+		// for each number of threads, run test
+		for(int n_test = 0; n_test < 16; n_test++)
+		{
+			int threads = test_numbers[mode][n_test];
+			// printf("cooldown... [press enter to continue]");
+			// getc(stdin);
+			// printf("start.\n");
+			fprintf(file, "%d; ", threads);
+			double median, std_deviation;
+			run_mode(&median, &std_deviation, mode, threads, iterations, M0, cache);
+			fprintf(file, "%.9lf; %.9lf\n", median, std_deviation);
+
+			printf("%d done\n", threads);
+			// verify
+			if(compare_matrices(M0, SCM)) printf("serial-parralel Match.\n");
+			else						  printf("serial-parralel ERROR mismatch!\n");
+		}
+	}
+
+	fclose(file);
+
+
+	return 0;
+}
+
+
+void run_mode(double* median, double* standard_deviation, int mode, int threads, int iterations, double* M0, double* cache)
+{
 	double times[12];
 	for(int reps = 0; reps < 12; reps++)
 	{
@@ -253,18 +279,7 @@ int main(int argc, char* argv[])
 		std += t*t;
 	}
 	std = sqrt(std / 10.0);
-
-	fprintf(file, "%.9lf, %.9lf;", med, std);
-
-	printf("%d done\n", threads);
-	// verify
-	if(compare_matrices(M0, SCM)) printf("serial-parralel Match.\n");
-	else						  printf("serial-parralel ERROR mismatch!\n");
-	}
-	}
-
-	fclose(file);
-
-
-	return 0;
+	*median = med;
+	*standard_deviation = std;
+	return;
 }
