@@ -3,12 +3,16 @@ result
 .vscode/settings.json
 .vscode/tasks.json
 times.ods
-tempo.png
+time.png
 speedup.png
 eficiency.png
+code.png
+comparison.png
 main.exe
 table.txt
 main.exp
 main.lib
 main.pdb
 vc140.pdb
+compile_commands.json
+.cache/clangd/index/main.c.59A11E51C1465BAB.idx

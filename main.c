@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <mpi.h>
 
 #define SIZE 1024
 #define DELTA_X 1.0
@@ -12,11 +13,9 @@
 
 #define UI 0
 
-const int test_numbers[2][16] = 
-{
-	{1, 2, 3, 4, 5, 6, 7,  8,  9, 10,  11,  12,  13,  14,   15,   16}, // OMP
-	{1, 2, 4, 8,16,32,64,128,256,512,1024,2048,4096,8192,16384,32768}, // CUDA
-};
+#ifndef CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC 1
+#endif
 
 
 // unrolled matrix into one vector
@@ -137,6 +136,129 @@ void update(double M[SIZE*SIZE], double cache[SIZE*SIZE], int threads, int itera
 	}
 	}
 
+	if(mode == 2)
+	{
+	// lines processed per process
+	int lines_per_thread = SIZE/threads;
+	int l_per_t = lines_per_thread;
+	// lines missing
+	int over = SIZE - (lines_per_thread*threads);
+	int ovr = over;
+
+	int rank;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	// printf("process: %d\n", rank);
+
+	// take one extra line, if there are enough
+	if(rank < over)
+	{
+		l_per_t++;
+		ovr = 0;
+	}
+	int low_index  = ((rank + 0)*l_per_t + ovr)*SIZE;
+	int high_index = ((rank + 1)*l_per_t + ovr)*SIZE;
+
+
+	// swap pointers instead of matrcies
+	double* t0 = M;
+	double* t1 = cache;
+
+	MPI_Status stat;
+	int err;
+
+	if(iterations % 2) iterations--;	//rounded down to even
+	for(int t = 0; t < iterations; t++)
+	{
+		double difusion_sum = 0.0;
+
+
+		//for every cell
+		for(int index = low_index; index < high_index; index++)
+		{
+			// change in concentration
+			double diff = 0.0;
+
+			// total concentration on the cells up/left/down/right of the middle cell
+			if(0 <= (index - SIZE)            ) {diff += (t0[index - SIZE]);}
+			if(0 <= (index -    1)            ) {diff += (t0[index -    1]);}
+			if(     (index + SIZE) < SIZE*SIZE) {diff += (t0[index + SIZE]);}
+			if(     (index +    1) < SIZE*SIZE) {diff += (t0[index +    1]);}
+			// minus the concentration of the middle cell
+			diff -= 4.0*(t0[index]);
+			// multiplied by the diffusion coeficient
+			diff = diff * DELTA_T*DIFF*(1/(DELTA_X*DELTA_X));
+
+			difusion_sum += ((diff > 0) ? diff : -diff);
+
+			//becomes the change in concentration of the middle cell
+			t1[index] = diff + t0[index];
+		}
+
+
+		// synchronize frontiers
+		if(rank % 2) // if odd
+		{
+			//send low line
+			// if(rank > 0) // it can't be 0
+			{
+				err = MPI_Sendrecv (
+				&(t1[low_index     ]), SIZE, MPI_DOUBLE, rank-1, t,
+				&(t1[low_index-SIZE]), SIZE, MPI_DOUBLE, rank-1, t,
+				MPI_COMM_WORLD, &stat);
+			}
+			// send high line
+			if(rank < threads-1)
+			{
+				err = MPI_Sendrecv (
+				&(t1[high_index-SIZE]), SIZE, MPI_DOUBLE, rank+1, t,
+				&(t1[high_index     ]), SIZE, MPI_DOUBLE, rank+1, t,
+				MPI_COMM_WORLD, &stat);
+			}
+		}
+		else
+		{
+			// send high line
+			if(rank < threads-1)
+			{
+				err = MPI_Sendrecv (
+				&(t1[high_index-SIZE]), SIZE, MPI_DOUBLE, rank+1, t,
+				&(t1[high_index     ]), SIZE, MPI_DOUBLE, rank+1, t,
+				MPI_COMM_WORLD, &stat);
+			}
+			//send low line
+			if(rank > 0)
+			{
+				err = MPI_Sendrecv (
+				&(t1[low_index     ]), SIZE, MPI_DOUBLE, rank-1, t,
+				&(t1[low_index-SIZE]), SIZE, MPI_DOUBLE, rank-1, t,
+				MPI_COMM_WORLD, &stat);
+			}
+		}
+
+
+		#if UI
+		if(!(t % 50)) {printf("i:%3d difference: %lf\n", t, difusion_sum);}
+		#endif
+
+		//significant speedup from switching values around
+		double* swap_pointer;
+		swap_pointer  = t0;
+		t0 = t1;
+		t1 = swap_pointer ;
+	}
+
+	// sync up processes, send updated lines
+	for(int ranks = 0; ranks < threads; ranks++)
+	{
+		if(ranks < over) {l_per_t = lines_per_thread + 1;	ovr =    0;}
+		else             {l_per_t = lines_per_thread + 0;	ovr = over;}
+		// printf("%d[%d]\n", ((l_per_t*ranks) + ovr)*SIZE,  l_per_t*SIZE);
+		err = MPI_Bcast(&M[((l_per_t*ranks) + ovr)*SIZE], l_per_t*SIZE, MPI_DOUBLE, ranks, MPI_COMM_WORLD);
+	}
+	// printf("\n");
+	}
+	
+
 	return;
 }
 // returns 1 if matricies are identical
@@ -161,9 +283,10 @@ int compare_matrices(double* M0, double* M1)
 
 void run_mode
 (
-	double* median, double* standard_deviation, 
 	int mode, int threads, int iterations, 
-	double* M0, double* cache
+	double* M0, double* cache,
+	FILE* file,
+	double* SCM
 );
 int main(int argc, char* argv[])
 {
@@ -178,6 +301,11 @@ int main(int argc, char* argv[])
 	// gets rounded down to even
 	int iterations = ITERATIONS;
 
+	int size_of_cluster = 1;
+	MPI_Init(&argc, &argv);
+	MPI_Comm_size(MPI_COMM_WORLD, &size_of_cluster);
+	// printf("processes: %d\n", size_of_cluster);
+
 	// serial check, disable threads and run normally
 	for(int i = 0; i < SIZE*SIZE; i++)	SCM[i] = 0.0;
 	SCM[cellID(SIZE/2, SIZE/2)] = 1.0;
@@ -187,30 +315,28 @@ int main(int argc, char* argv[])
 
 	FILE* file = fopen("result", "w");
 	// for each mode, run tests
-	for(int mode = 1; mode < 2; mode++)
+	if(size_of_cluster == 1)	// this is  a normal CUDA/OMP run
 	{
-		#ifndef GPU
-		if(mode == 1)	break;
+		#ifdef GPU
+		for(int threads = 1; threads < 65; threads++)
+		{
+			run_mode(1, threads, iterations, M0, cache, file, SCM);
+		}
 		#endif
 		// for each number of threads, run test
-		for(int n_test = 0; n_test < 16; n_test++)
+		for(int threads = 1; threads < 17; threads++)
 		{
-			int threads = test_numbers[mode][n_test];
-			// printf("cooldown... [press enter to continue]");
-			// getc(stdin);
-			// printf("start.\n");
-			fprintf(file, "%d; ", threads);
-			double median, std_deviation;
-			run_mode(&median, &std_deviation, mode, threads, iterations, M0, cache);
-			fprintf(file, "%.9lf; %.9lf\n", median, std_deviation);
-
-			printf("%d done\n", threads);
-			// verify
-			if(compare_matrices(M0, SCM)) printf("serial-parralel Match.\n");
-			else						  printf("serial-parralel ERROR mismatch!\n");
+			run_mode(0, threads, iterations, M0, cache, file, SCM);
 		}
 	}
+	else
+	{
+		//this is a MPI test
+		run_mode(2, size_of_cluster, iterations, M0, cache, file, SCM);
 
+	}
+
+	MPI_Finalize();
 	fclose(file);
 
 
@@ -218,12 +344,18 @@ int main(int argc, char* argv[])
 }
 
 
-void run_mode(double* median, double* standard_deviation, int mode, int threads, int iterations, double* M0, double* cache)
+void run_mode(int mode, int threads, int iterations, double* M0, double* cache, FILE* file, double* SCM)
 {
+	// printf("cooldown... [press enter to continue]");
+	// getc(stdin);
+	// printf("start.\n");
+	fprintf(file, "%d; %d; ", mode, threads);
+
 	double times[12];
 	for(int reps = 0; reps < 12; reps++)
 	{
 		for(int i = 0; i < SIZE*SIZE; i++)	M0[i] = 0.0;
+		for(int i = 0; i < SIZE*SIZE; i++)	cache[i] = 0.0;
 		M0[cellID(SIZE/2, SIZE/2)] = 1.0;
 
 
@@ -279,7 +411,18 @@ void run_mode(double* median, double* standard_deviation, int mode, int threads,
 		std += t*t;
 	}
 	std = sqrt(std / 10.0);
-	*median = med;
-	*standard_deviation = std;
+
+	fprintf(file, "%.9lf; %.9lf\n", med, std);
+	printf("%d done\n", threads);
+	// // verify
+	// printf("\nM0");
+	// for(int i = 0; i < SIZE*SIZE; i++){if((i%SIZE)==0)printf("\n"); printf("%lf ", M0[i]);}
+	// printf("\n");
+	// printf("\nSCM");
+	// for(int i = 0; i < SIZE*SIZE; i++){if((i%SIZE)==0)printf("\n"); printf("%lf ",SCM[i]);}
+	// printf("\n");
+	if(compare_matrices(M0, SCM)) printf("serial-parralel Match.\n");
+	else						  printf("serial-parralel ERROR mismatch!\n");
+
 	return;
 }
